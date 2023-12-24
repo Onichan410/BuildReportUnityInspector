@@ -37,27 +37,20 @@ namespace Unity.BuildReportInspector
             Selection.objects = new Object[] { AssetDatabase.LoadAssetAtPath<BuildReport>(assetPath) };
         }
 
-        private BuildReport report
-        {
-            get { return target as BuildReport; }
-        }
+        private BuildReport report => target as BuildReport;
 
 #if UNITY_2019_3_OR_NEWER
-        private MobileAppendix mobileAppendix
-        { 
-            get { return MobileHelper.LoadMobileAppendix(report.summary.guid.ToString()); }
-        }
+        private MobileAppendix mobileAppendix => MobileHelper.LoadMobileAppendix(report.summary.guid.ToString());
 #endif // UNITY_2019_3_OR_NEWER
 
-        private static GUIStyle s_SizeStyle;
+        private static GUIStyle _sizeStyle;
 
         private static GUIStyle SizeStyle {
             get
             {
-                if (s_SizeStyle == null)
-                    s_SizeStyle = new GUIStyle(GUI.skin.label);
-                s_SizeStyle.alignment = TextAnchor.MiddleRight;
-                return s_SizeStyle;   
+                _sizeStyle ??= new GUIStyle(GUI.skin.label);
+                _sizeStyle.alignment = TextAnchor.MiddleRight;
+                return _sizeStyle;   
             }
         }
 
@@ -73,52 +66,60 @@ namespace Unity.BuildReportInspector
             return result;
         }
 
-        private static GUIStyle s_OddStyle;
+        private static GUIStyle _oddStyle;
 
         private static GUIStyle OddStyle
         {
             get
             {
-                if (s_OddStyle != null)
-                    return s_OddStyle;
-                s_OddStyle = new GUIStyle(GUIStyle.none)
+                if (_oddStyle != null)
+                {
+                    return _oddStyle;   
+                }
+                
+                _oddStyle = new GUIStyle(GUIStyle.none)
                 {
                     normal = {background = MakeColorTexture(new Color(0.5f, 0.5f, 0.5f, 0.1f))}
                 };
-                return s_OddStyle;
+                return _oddStyle;
             }
         }
 
-        private static GUIStyle s_EvenStyle;
+        private static GUIStyle _evenStyle;
 
         private static GUIStyle EvenStyle
         {
             get
             {
-                if (s_EvenStyle != null)
-                    return s_EvenStyle;
-                s_EvenStyle = new GUIStyle(GUIStyle.none)
+                if (_evenStyle != null)
+                {
+                    return _evenStyle;   
+                }
+                
+                _evenStyle = new GUIStyle(GUIStyle.none)
                 {
                     normal = {background = MakeColorTexture(new Color(0.5f, 0.5f, 0.5f, 0.0f))}
                 };
-                return s_EvenStyle;
+                return _evenStyle;
             }
         }
 
-        static GUIStyle s_DataFileStyle;
+        static GUIStyle _dataFileStyle;
 
         private static GUIStyle DataFileStyle
         {
             get
             {
-                if (s_DataFileStyle != null)
-                    return s_DataFileStyle;
-                s_DataFileStyle = new GUIStyle(EditorStyles.foldout) {fontStyle = FontStyle.Bold};
-                return s_DataFileStyle;
+                if (_dataFileStyle != null)
+                {
+                    return _dataFileStyle;   
+                }
+                _dataFileStyle = new GUIStyle(EditorStyles.foldout) {fontStyle = FontStyle.Bold};
+                return _dataFileStyle;
             }
         }
 
-        private const int k_LineHeight = 20;
+        private const int _lineHeight = 20;
 
         private enum ReportDisplayMode
         {
@@ -148,14 +149,14 @@ namespace Unity.BuildReportInspector
             ImporterType
         };
 
-        ReportDisplayMode mode;
-        SourceAssetsDisplayMode sourceDispMode;
+        private ReportDisplayMode _mode;
+        private SourceAssetsDisplayMode _sourceDispMode;
 
-        private Vector2 scrollPosition;
+        private Vector2 _scrollPosition;
 
-        static string FormatTime(System.TimeSpan t)
+        static string FormatTime(TimeSpan time)
         {
-            return t.Hours + ":" + t.Minutes.ToString("D2") + ":" + t.Seconds.ToString("D2") + "." + t.Milliseconds.ToString("D3");
+            return time.Hours + ":" + time.Minutes.ToString("D2") + ":" + time.Seconds.ToString("D2") + "." + time.Milliseconds.ToString("D3");
         }
 
         /// <summary>
@@ -186,14 +187,14 @@ namespace Unity.BuildReportInspector
 #endif
             
 
-            mode = (ReportDisplayMode)GUILayout.Toolbar((int)mode, ReportDisplayModeStrings);
+            _mode = (ReportDisplayMode)GUILayout.Toolbar((int)_mode, ReportDisplayModeStrings);
 
-            if (mode == ReportDisplayMode.SourceAssets)
+            if (_mode == ReportDisplayMode.SourceAssets)
             {
-                sourceDispMode = (SourceAssetsDisplayMode)EditorGUILayout.EnumPopup("Sort by:", sourceDispMode);
+                _sourceDispMode = (SourceAssetsDisplayMode)EditorGUILayout.EnumPopup("Sort by:", _sourceDispMode);
             }
 #if UNITY_2019_3_OR_NEWER
-            if (mode == ReportDisplayMode.OutputFiles && mobileAppendix != null)
+            else if (_mode == ReportDisplayMode.OutputFiles && mobileAppendix != null)
             {
                 GUILayout.BeginHorizontal();
                 GUILayout.Label(new GUIContent("File"), GUILayout.MaxWidth(EditorGUIUtility.currentViewWidth - 260));
@@ -202,8 +203,8 @@ namespace Unity.BuildReportInspector
                 GUILayout.EndHorizontal();
             }
 #endif
-            scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
-            switch(mode)
+            _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
+            switch(_mode)
             {
                 case ReportDisplayMode.BuildSteps:
                     OnBuildStepGUI();
@@ -218,9 +219,13 @@ namespace Unity.BuildReportInspector
                 case ReportDisplayMode.OutputFiles:
 #if UNITY_2019_3_OR_NEWER
                     if (mobileAppendix == null)
+                    {
                         OnOutputFilesGUI();
+                    }
                     else
+                    {
                         OnMobileOutputFilesGUI();
+                    }
 #else
                     OnOutputFilesGUI();
 #endif
@@ -241,49 +246,57 @@ namespace Unity.BuildReportInspector
 
         private static List<LogType> ErrorLogTypes = new List<LogType> { LogType.Error, LogType.Assert, LogType.Exception };
 
-        public static LogType WorseLogType(LogType log1, LogType log2)
+        private static LogType WorseLogType(LogType log1, LogType log2)
         {
             if (ErrorLogTypes.Contains(log1) || ErrorLogTypes.Contains(log2))
+            {
                 return LogType.Error;
+            }
+
             if (log1 == LogType.Warning || log2 == LogType.Warning)
+            {
                 return LogType.Warning;
+            }
+
             return LogType.Log;
         }
 
         private class BuildStepNode
         {
-            private BuildStep? step;
-            public int depth;
-            public List<BuildStepNode> children;
-            private LogType worstChildrenLogType;
-            public bool foldoutState;
+            private BuildStep? _step;
+            public int _depth;
+            public List<BuildStepNode> _children;
+            private LogType _worstChildrenLogType;
+            public bool _foldoutState;
 
-            public BuildStepNode(BuildStep? _step, int _depth)
+            public BuildStepNode(BuildStep? step, int depth)
             {
-                step = _step;
-                depth = _depth;
-                children = new List<BuildStepNode>();
+                _step = step;
+                _depth = depth;
+                _children = new List<BuildStepNode>();
 
-                worstChildrenLogType = LogType.Log;
-                if(step.HasValue)
+                _worstChildrenLogType = LogType.Log;
+                if(_step.HasValue)
                 {
-                    foreach (var message in step.Value.messages)
+                    foreach (var message in _step.Value.messages)
                     {
-                        worstChildrenLogType = message.type; // Warning
+                        _worstChildrenLogType = message.type; // Warning
                         if (ErrorLogTypes.Contains(message.type))
+                        {
                             break; // Error
+                        }
                     }
                 }
 
-                foldoutState = false;
+                _foldoutState = false;
             }
 
             internal void UpdateWorstChildrenLogType()
             {
-                foreach(var child in children)
+                foreach(var child in _children)
                 {
                     child.UpdateWorstChildrenLogType();
-                    worstChildrenLogType = WorseLogType(worstChildrenLogType, child.worstChildrenLogType);
+                    _worstChildrenLogType = WorseLogType(_worstChildrenLogType, child._worstChildrenLogType);
                 }
             }
 
@@ -294,38 +307,41 @@ namespace Unity.BuildReportInspector
                 GUILayout.BeginHorizontal();                
                 GUILayout.Space(10 + indentPixels);
 
-                if (children.Any() || (step.HasValue && step.Value.messages.Any()))
+                if (_children.Any() || (_step.HasValue && _step.Value.messages.Any()))
                 {
-                    if (worstChildrenLogType != LogType.Log)
+                    if (_worstChildrenLogType != LogType.Log)
                     {
-                        var icon = "console.warnicon.sml";
-                        if (worstChildrenLogType != LogType.Warning)
-                            icon = "console.erroricon.sml";
-                        foldoutState = EditorGUILayout.Foldout(foldoutState, EditorGUIUtility.TrTextContentWithIcon(step.GetValueOrDefault().name, icon), true);
+                        string icon = _worstChildrenLogType == LogType.Warning
+                            ? "console.warnicon.sml"
+                            : "console.erroricon.sml";
+
+                        _foldoutState = EditorGUILayout.Foldout(_foldoutState, EditorGUIUtility.TrTextContentWithIcon(_step.GetValueOrDefault().name, icon), true);
                     }
                     else
                     {
-                        foldoutState = EditorGUILayout.Foldout(foldoutState, new GUIContent(step.GetValueOrDefault().name), true);
+                        _foldoutState = EditorGUILayout.Foldout(_foldoutState, new GUIContent(_step.GetValueOrDefault().name), true);
                     }
                 }
                 else
-                    GUILayout.Label(step.GetValueOrDefault().name);
+                {
+                    GUILayout.Label(_step.GetValueOrDefault().name);
+                }
 
                 GUILayout.FlexibleSpace();
-                GUILayout.Label(step.GetValueOrDefault().duration.Hours + ":" + 
-                                step.GetValueOrDefault().duration.Minutes.ToString("D2") + ":" + 
-                                step.GetValueOrDefault().duration.Seconds.ToString("D2") + "." + 
-                                step.GetValueOrDefault().duration.Milliseconds.ToString("D3"));
+                GUILayout.Label(_step.GetValueOrDefault().duration.Hours + ":" + 
+                                _step.GetValueOrDefault().duration.Minutes.ToString("D2") + ":" + 
+                                _step.GetValueOrDefault().duration.Seconds.ToString("D2") + "." + 
+                                _step.GetValueOrDefault().duration.Milliseconds.ToString("D3"));
                 GUILayout.EndHorizontal();
 
-                if (foldoutState)
+                if (_foldoutState)
                 {
-                    if (step.HasValue)
+                    if (_step.HasValue)
                     {
-                        foreach (var message in step.Value.messages)
+                        foreach (var message in _step.Value.messages)
                         {
-                            var icon = "console.infoicon.sml";
-                            var oldCol = GUI.color;
+                            string icon = "console.infoicon.sml";
+                            Color oldColor = GUI.color;
                             switch (message.type)
                             {
                                 case LogType.Warning:
@@ -348,11 +364,11 @@ namespace Unity.BuildReportInspector
                                 EditorGUILayout.LabelField(new GUIContent(message.content, message.content), style);
                             }
                             GUILayout.EndHorizontal();
-                            GUI.color = oldCol;
+                            GUI.color = oldColor;
                         }
                     }
 
-                    foreach (var child in children)
+                    foreach (var child in _children)
                         child.LayoutGUI(ref switchBackgroundColor, indentPixels + 20);
                 }
                 GUILayout.EndVertical();
@@ -402,39 +418,39 @@ namespace Unity.BuildReportInspector
         BuildStepNode rootStepNode = new BuildStepNode(null, -1);
         private void OnBuildStepGUI()
         {
-            if(!rootStepNode.children.Any())
+            if(!rootStepNode._children.Any())
             {
                 // re-create steps hierarchy
                 var branch = new Stack<BuildStepNode>();
                 branch.Push(rootStepNode);
                 foreach (var step in report.steps)
                 {
-                    while (branch.Peek().depth >= step.depth)
+                    while (branch.Peek()._depth >= step.depth)
                     {
                         branch.Pop();
                     }
 
-                    while (branch.Peek().depth < (step.depth - 1))
+                    while (branch.Peek()._depth < (step.depth - 1))
                     {
                         var intermediateNode = new BuildStepNode(null, branch.Count - 1);
-                        branch.Peek().children.Add(intermediateNode);
+                        branch.Peek()._children.Add(intermediateNode);
                         branch.Push(intermediateNode);
                     }
 
                     var stepNode = new BuildStepNode(step, step.depth);
-                    branch.Peek().children.Add(stepNode);
+                    branch.Peek()._children.Add(stepNode);
                     branch.Push(stepNode);
                 }
 
                 rootStepNode.UpdateWorstChildrenLogType();
 
                 // expand first step, usually "Build player"
-                if (rootStepNode.children.Any())
-                    rootStepNode.children[0].foldoutState = true;
+                if (rootStepNode._children.Any())
+                    rootStepNode._children[0]._foldoutState = true;
             }
 
             var odd = false;
-            foreach(var stepNode in rootStepNode.children)
+            foreach(var stepNode in rootStepNode._children)
                 stepNode.LayoutGUI(ref odd, 0);
         }
 
@@ -472,7 +488,7 @@ namespace Unity.BuildReportInspector
                     EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<Object>(entry.path));
                 GUILayout.Label(FormatSize((ulong)entry.size), SizeStyle);
                 GUILayout.EndHorizontal();
-                vPos += k_LineHeight;
+                vPos += _lineHeight;
                 odd = !odd;
             }
             GUILayout.EndVertical();
@@ -558,7 +574,7 @@ namespace Unity.BuildReportInspector
 #if UNITY_2019_3_OR_NEWER
         private void OnAssetsGUI()
         {
-            var vPos = -scrollPosition.y;
+            var vPos = -_scrollPosition.y;
             if (assets == null)
             {
                 assets = new List<AssetEntry>();
@@ -600,7 +616,7 @@ namespace Unity.BuildReportInspector
 
         private void DisplayAssetsView(float vPos)
         {
-            switch (sourceDispMode)
+            switch (_sourceDispMode)
             {
                 case SourceAssetsDisplayMode.Size:
                     ShowAssets(assets, ref vPos);
@@ -617,7 +633,7 @@ namespace Unity.BuildReportInspector
                         GUILayout.Label(FormatSize((ulong)outputFile.Value), SizeStyle);
                         GUILayout.EndHorizontal();
 
-                        vPos += k_LineHeight;
+                        vPos += _lineHeight;
 
                         if (assetsFoldout[outputFile.Key])
                             ShowAssets(assets, ref vPos, outputFile.Key);
@@ -635,7 +651,7 @@ namespace Unity.BuildReportInspector
                         GUILayout.Label(FormatSize((ulong)outputFile.Value), SizeStyle);
                         GUILayout.EndHorizontal();
 
-                        vPos += k_LineHeight;
+                        vPos += _lineHeight;
 
                         if (assetsFoldout[outputFile.Key])
                             ShowAssets(assets, ref vPos, null, outputFile.Key);
