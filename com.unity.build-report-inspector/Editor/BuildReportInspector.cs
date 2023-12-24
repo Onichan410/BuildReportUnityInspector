@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
+using UnityEngine.Serialization;
 using Object = UnityEngine.Object;
 #if UNITY_2019_3_OR_NEWER
 using Unity.BuildReportInspector.Mobile;
@@ -264,10 +265,15 @@ namespace Unity.BuildReportInspector
         private class BuildStepNode
         {
             private BuildStep? _step;
-            public int _depth;
-            public List<BuildStepNode> _children;
+            private int _depth;
+            private List<BuildStepNode> _children;
             private LogType _worstChildrenLogType;
-            public bool _foldoutState;
+            private bool _foldoutState;
+
+            public List<BuildStepNode> Children => _children;
+
+            public bool FoldoutState { get; set; }
+            public int Depth => _depth;
 
             public BuildStepNode(BuildStep? step, int depth)
             {
@@ -369,7 +375,9 @@ namespace Unity.BuildReportInspector
                     }
 
                     foreach (var child in _children)
+                    {
                         child.LayoutGUI(ref switchBackgroundColor, indentPixels + 20);
+                    }
                 }
                 GUILayout.EndVertical();
             }
@@ -386,7 +394,7 @@ namespace Unity.BuildReportInspector
                     foreach (var entry in mobileAppendix.Architectures)
                     {
                         var sizeText = entry.DownloadSize == 0 ? "N/A" : FormatSize((ulong) entry.DownloadSize);
-                        EditorGUILayout.LabelField(string.Format("            {0}", entry.Name), sizeText);
+                        EditorGUILayout.LabelField($"            {entry.Name}", sizeText);
                     }
                 }
                 else
@@ -404,7 +412,7 @@ namespace Unity.BuildReportInspector
                 {
                     return;
                 }
-                var ipaPath = EditorUtility.OpenFilePanel("Select an .ipa build.", "", "ipa");
+                string ipaPath = EditorUtility.OpenFilePanel("Select an .ipa build.", "", "ipa");
                 if (!string.IsNullOrEmpty(ipaPath))
                 {
                     // If an .ipa is selected, generate the MobileAppendix
@@ -415,78 +423,82 @@ namespace Unity.BuildReportInspector
         }
 #endif // UNITY_2019_3_OR_NEWER
 
-        BuildStepNode rootStepNode = new BuildStepNode(null, -1);
+        BuildStepNode _rootStepNode = new BuildStepNode(null, -1);
         private void OnBuildStepGUI()
         {
-            if(!rootStepNode._children.Any())
+            if(!_rootStepNode.Children.Any())
             {
                 // re-create steps hierarchy
-                var branch = new Stack<BuildStepNode>();
-                branch.Push(rootStepNode);
+                Stack<BuildStepNode> branch = new Stack<BuildStepNode>();
+                branch.Push(_rootStepNode);
                 foreach (var step in report.steps)
                 {
-                    while (branch.Peek()._depth >= step.depth)
+                    while (branch.Peek().Depth >= step.depth)
                     {
                         branch.Pop();
                     }
 
-                    while (branch.Peek()._depth < (step.depth - 1))
+                    while (branch.Peek().Depth < step.depth - 1)
                     {
                         var intermediateNode = new BuildStepNode(null, branch.Count - 1);
-                        branch.Peek()._children.Add(intermediateNode);
+                        branch.Peek().Children.Add(intermediateNode);
                         branch.Push(intermediateNode);
                     }
 
                     var stepNode = new BuildStepNode(step, step.depth);
-                    branch.Peek()._children.Add(stepNode);
+                    branch.Peek().Children.Add(stepNode);
                     branch.Push(stepNode);
                 }
 
-                rootStepNode.UpdateWorstChildrenLogType();
+                _rootStepNode.UpdateWorstChildrenLogType();
 
                 // expand first step, usually "Build player"
-                if (rootStepNode._children.Any())
-                    rootStepNode._children[0]._foldoutState = true;
+                if (_rootStepNode.Children.Any())
+                {
+                    _rootStepNode.Children[0].FoldoutState = true;
+                }
             }
 
             var odd = false;
-            foreach(var stepNode in rootStepNode._children)
+            foreach(var stepNode in _rootStepNode.Children)
+            {
                 stepNode.LayoutGUI(ref odd, 0);
+            }
         }
-
+    
         private static string FormatSize(ulong size)
         {
-            if (size < 1024)
-                return size + " B";
-            if (size < 1024*1024)
-                return (size/1024.00).ToString("F2") + " KB";
-            if (size < 1024 * 1024 * 1024)
-                return (size / (1024.0 * 1024.0)).ToString("F2") + " MB";
-            return (size / (1024.0 * 1024.0 * 1024.0)).ToString("F2") + " GB";
+            return size switch
+            {
+                < 1024 => size + " B",
+                < 1024 * 1024 => (size / 1024.00).ToString("F2") + " KB",
+                < 1024 * 1024 * 1024 => (size / (1024.0 * 1024.0)).ToString("F2") + " MB",
+                _ => (size / (1024.0 * 1024.0 * 1024.0)).ToString("F2") + " GB"
+            };
         }
 
         private struct AssetEntry
         {
-            public string path;
-            public int size;
-            public string outputFile;
-            public string type;
-            public Texture icon;
+            public string _path;
+            public int _size;
+            public string _outputFile;
+            public string _type;
+            public Texture _icon;
         }
 
         private static void ShowAssets(IEnumerable<AssetEntry> assets, ref float vPos, string fileFilter = null, string typeFilter = null)
         {
             GUILayout.BeginVertical();
             var odd = false;
-            foreach (var entry in assets.Where(entry => fileFilter == null || fileFilter == entry.outputFile).Where(entry => typeFilter == null || typeFilter == entry.type))
+            foreach (var entry in assets.Where(entry => fileFilter == null || fileFilter == entry._outputFile).Where(entry => typeFilter == null || typeFilter == entry._type))
             {
                 GUILayout.BeginHorizontal(odd ? OddStyle : EvenStyle);
 
-                GUILayout.Label(entry.icon, GUILayout.MaxHeight(16), GUILayout.Width(20));
-                var fileName = string.IsNullOrEmpty(entry.path) ? "Unknown" : Path.GetFileName(entry.path);
-                if (GUILayout.Button(new GUIContent(Path.GetFileName(fileName), entry.path), GUI.skin.label, GUILayout.MaxWidth(EditorGUIUtility.currentViewWidth - 110)))
-                    EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<Object>(entry.path));
-                GUILayout.Label(FormatSize((ulong)entry.size), SizeStyle);
+                GUILayout.Label(entry._icon, GUILayout.MaxHeight(16), GUILayout.Width(20));
+                var fileName = string.IsNullOrEmpty(entry._path) ? "Unknown" : Path.GetFileName(entry._path);
+                if (GUILayout.Button(new GUIContent(Path.GetFileName(fileName), entry._path), GUI.skin.label, GUILayout.MaxWidth(EditorGUIUtility.currentViewWidth - 110)))
+                    EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<Object>(entry._path));
+                GUILayout.Label(FormatSize((ulong)entry._size), SizeStyle);
                 GUILayout.EndHorizontal();
                 vPos += _lineHeight;
                 odd = !odd;
@@ -577,6 +589,7 @@ namespace Unity.BuildReportInspector
             var vPos = -_scrollPosition.y;
             if (assets == null)
             {
+                Debug.Log("null asset");
                 assets = new List<AssetEntry>();
                 outputFiles = new Dictionary<string, int>();
                 assetTypes = new Dictionary<string, int>();
@@ -598,15 +611,15 @@ namespace Unity.BuildReportInspector
                         assetTypes[type] += (int)sizeProp;
                         assets.Add(new AssetEntry
                         {
-                            size = (int) sizeProp,
-                            icon = AssetDatabase.GetCachedIcon(entry.sourceAssetPath),
-                            outputFile = packedAsset.shortPath,
-                            type = type,
-                            path = entry.sourceAssetPath
+                            _size = (int) sizeProp,
+                            _icon = AssetDatabase.GetCachedIcon(entry.sourceAssetPath),
+                            _outputFile = packedAsset.shortPath,
+                            _type = type,
+                            _path = entry.sourceAssetPath
                         });
                     }
                 }
-                assets = assets.OrderBy(p => -p.size).ToList();
+                assets = assets.OrderBy(p => -p._size).ToList();
                 outputFiles = outputFiles.OrderBy(p => -p.Value).ToDictionary(x => x.Key, x => x.Value);
                 assetTypes = assetTypes.OrderBy(p => -p.Value).ToDictionary(x => x.Key, x => x.Value);
             }
@@ -654,7 +667,9 @@ namespace Unity.BuildReportInspector
                         vPos += _lineHeight;
 
                         if (assetsFoldout[outputFile.Key])
+                        {
                             ShowAssets(assets, ref vPos, null, outputFile.Key);
+                        }
                     }             
                     break;
                 default:
@@ -669,36 +684,44 @@ namespace Unity.BuildReportInspector
 #else
             var files = report.files;
 #endif // UNITY_2019_3_OR_NEWER
-            
-            if (files.Length == 0)
-                return;
 
-            var longestCommonRoot = files[0].path;
-            var tempRoot = Path.GetFullPath("Temp");
+            if (files.Length == 0)
+            {
+                return;
+            }
+
+            string longestCommonRoot = files[0].path;
+            string tempRoot = Path.GetFullPath("Temp");
             foreach (var file in files)
             {
-                if (file.path.StartsWith(tempRoot))
-                    continue;
-                for (var i = 0; i < longestCommonRoot.Length && i < file.path.Length; i++)
+                if (!file.path.StartsWith(tempRoot))
                 {
-                    if (longestCommonRoot[i] == file.path[i])
-                        continue;
-                    longestCommonRoot = longestCommonRoot.Substring(0, i);
-                    break;
+                    for (var i = 0; i < longestCommonRoot.Length && i < file.path.Length; i++)
+                    {
+                        if (longestCommonRoot[i] != file.path[i])
+                        {
+                            longestCommonRoot = longestCommonRoot.Substring(0, i);
+                            break;
+                        }
+                    }
                 }
             }
-            var odd = false;
+
+            bool odd = false;
             foreach (var file in files)
             {
                 if (file.path.StartsWith(tempRoot))
+                {
                     continue;
-                GUILayout.BeginHorizontal(odd? OddStyle:EvenStyle);
+                }
+
+                GUILayout.BeginHorizontal(odd ? OddStyle : EvenStyle);
                 odd = !odd;
-                GUILayout.Label(new GUIContent(file.path.Substring(longestCommonRoot.Length), file.path), GUILayout.MaxWidth(EditorGUIUtility.currentViewWidth - 260));
+                GUILayout.Label(new GUIContent(file.path.Substring(longestCommonRoot.Length), file.path),
+                    GUILayout.MaxWidth(EditorGUIUtility.currentViewWidth - 260));
                 GUILayout.Label(file.role);
                 GUILayout.Label(FormatSize(file.size), SizeStyle);
                 GUILayout.EndHorizontal();
-
             }
         }
 
@@ -710,20 +733,29 @@ namespace Unity.BuildReportInspector
             foreach (var file in mobileAppendix.Files)
             {
                 if (file.Path.StartsWith(tempRoot))
+                {
                     continue;
+                }
+
                 for (var i = 0; i < longestCommonRoot.Length && i < file.Path.Length; i++)
                 {
                     if (longestCommonRoot[i] == file.Path[i])
+                    {
                         continue;
+                    }
+
                     longestCommonRoot = longestCommonRoot.Substring(0, i);
                     break;
                 }
             }
-            var odd = false;
+            bool odd = false;
             foreach (var file in mobileAppendix.Files)
             {
                 if (file.Path.StartsWith(tempRoot))
+                {
                     continue;
+                }
+
                 GUILayout.BeginHorizontal(odd? OddStyle:EvenStyle);
                 odd = !odd;
                 GUILayout.Label(new GUIContent(file.Path.Substring(longestCommonRoot.Length), file.Path), GUILayout.MaxWidth(EditorGUIUtility.currentViewWidth - 260));
@@ -735,24 +767,28 @@ namespace Unity.BuildReportInspector
         }
 #endif // UNITY_2019_3_OR_NEWER
 
-        Dictionary<string, Texture> strippingIcons = new Dictionary<string, Texture>();
-        Dictionary<string, int> strippingSizes = new Dictionary<string, int>();
+        Dictionary<string, Texture> _strippingIcons = new Dictionary<string, Texture>();
+        Dictionary<string, int> _strippingSizes = new Dictionary<string, int>();
 
-        static Dictionary<string, Texture> iconCache = new Dictionary<string, Texture>();
+        static Dictionary<string, Texture> _iconCache = new Dictionary<string, Texture>();
 
         private static Texture StrippingEntityIcon(string iconString)
         {
-            if (iconCache.ContainsKey(iconString))
-                return iconCache[iconString];
+            if (_iconCache.TryGetValue(iconString, out var icon))
+            {
+                return icon;
+            }
 
             if (iconString.StartsWith("class/"))
             {
                 var type = System.Type.GetType("UnityEngine." + iconString.Substring(6) + ",UnityEngine");
                 if (type != null)
                 {
-                    var image = EditorGUIUtility.ObjectContent(null, System.Type.GetType("UnityEngine." + iconString.Substring(6) + ",UnityEngine")).image;
+                    Texture image = EditorGUIUtility.ObjectContent(null, System.Type.GetType("UnityEngine." + iconString.Substring(6) + ",UnityEngine")).image;
                     if (image != null)
-                        iconCache[iconString] = image;
+                    {
+                        _iconCache[iconString] = image;
+                    }
                 }
             }
             if (iconString.StartsWith("package/"))
@@ -762,48 +798,65 @@ namespace Unity.BuildReportInspector
                 {
                     Texture2D tex = new Texture2D(2, 2);
                     tex.LoadImage(File.ReadAllBytes(path));
-                    iconCache[iconString] = tex;
+                    _iconCache[iconString] = tex;
                 }
             }
 
-            if (!iconCache.ContainsKey(iconString))
-                iconCache[iconString] = EditorGUIUtility.ObjectContent(null, typeof(DefaultAsset)).image;
+            if (!_iconCache.ContainsKey(iconString))
+            {
+                _iconCache[iconString] = EditorGUIUtility.ObjectContent(null, typeof(DefaultAsset)).image;
+            }
 
-            return iconCache[iconString];
+            return _iconCache[iconString];
         }
 
-        Dictionary<string, bool> strippingReasonsFoldout = new Dictionary<string, bool>();
+        Dictionary<string, bool> _strippingReasonsFoldout = new Dictionary<string, bool>();
         private void StrippingEntityGui(string entity, ref bool odd)
         {
             GUILayout.BeginHorizontal(odd ? OddStyle : EvenStyle);
             odd = !odd;
             GUILayout.Space(15); 
             var reasons = report.strippingInfo.GetReasonsForIncluding(entity).ToList();
-            if (!strippingIcons.ContainsKey(entity))
-                strippingIcons[entity] = StrippingEntityIcon(entity);
-            var icon = strippingIcons[entity];
+            if (!_strippingIcons.ContainsKey(entity))
+            {
+                _strippingIcons[entity] = StrippingEntityIcon(entity);
+            }
+
+            var icon = _strippingIcons[entity];
             if (reasons.Any())
             {
-                if (!strippingReasonsFoldout.ContainsKey(entity))
-                    strippingReasonsFoldout[entity] = false;
-                strippingReasonsFoldout[entity] = EditorGUILayout.Foldout(strippingReasonsFoldout[entity], new GUIContent(entity, icon));
+                if (!_strippingReasonsFoldout.ContainsKey(entity))
+                {
+                    _strippingReasonsFoldout[entity] = false;
+                }
+
+                _strippingReasonsFoldout[entity] = EditorGUILayout.Foldout(_strippingReasonsFoldout[entity], new GUIContent(entity, icon));
             }
             else
+            {
                 EditorGUILayout.LabelField(new GUIContent(entity, icon), GUILayout.Height(16), GUILayout.MaxWidth(1000));
+            }
 
             GUILayout.FlexibleSpace();
 
-            if (strippingSizes.ContainsKey(entity) && strippingSizes[entity] != 0)
-                GUILayout.Label(FormatSize((ulong)strippingSizes[entity]), SizeStyle, GUILayout.Width(100));
+            if (_strippingSizes.ContainsKey(entity) && _strippingSizes[entity] != 0)
+            {
+                GUILayout.Label(FormatSize((ulong)_strippingSizes[entity]), SizeStyle, GUILayout.Width(100));
+            }
 
             GUILayout.EndHorizontal();
 
-            if (!strippingReasonsFoldout.ContainsKey(entity) || !strippingReasonsFoldout[entity])
+            if (!_strippingReasonsFoldout.ContainsKey(entity) || !_strippingReasonsFoldout[entity])
+            {
                 return;
+            }
 
             EditorGUI.indentLevel++;
             foreach (var reason in reasons)
+            {
                 StrippingEntityGui(reason, ref odd);
+            }
+
             EditorGUI.indentLevel--;
         }
 
@@ -815,17 +868,17 @@ namespace Unity.BuildReportInspector
                 return;
             }
 
-            var so = new SerializedObject(report.strippingInfo);
-            var serializedDependencies = so.FindProperty("serializedDependencies");
+            SerializedObject so = new SerializedObject(report.strippingInfo);
+            SerializedProperty serializedDependencies = so.FindProperty("serializedDependencies");
             //var hasSizes = false;
             if (serializedDependencies != null)
             {
                 for (var i = 0; i < serializedDependencies.arraySize; i++)
                 {
-                    var sp = serializedDependencies.GetArrayElementAtIndex(i);
-                    var depKey = sp.FindPropertyRelative("key").stringValue;
-                    strippingIcons[depKey] = StrippingEntityIcon(sp.FindPropertyRelative("icon").stringValue);
-                    strippingSizes[depKey] = sp.FindPropertyRelative("size").intValue;
+                    SerializedProperty sp = serializedDependencies.GetArrayElementAtIndex(i);
+                    string depKey = sp.FindPropertyRelative("key").stringValue;
+                    _strippingIcons[depKey] = StrippingEntityIcon(sp.FindPropertyRelative("icon").stringValue);
+                    _strippingSizes[depKey] = sp.FindPropertyRelative("size").intValue;
                     //if (strippingSizes[depKey] != 0)
                     //    hasSizes = true;
                 }
@@ -835,7 +888,9 @@ namespace Unity.BuildReportInspector
             if (/*!hasSizes &&*/ analyzeMethod != null)
             {
                 if (GUILayout.Button("Analyze size"))
+                {
                     analyzeMethod.Invoke(report.strippingInfo, null);
+                }
             }
 
             var odd = false;
@@ -846,13 +901,13 @@ namespace Unity.BuildReportInspector
         }
 
 #if UNITY_2020_1_OR_NEWER
-        class ScenesUsingAssetGUI
+        private class ScenesUsingAssetGUI
         {
-            public string assetPath;
-            public string[] scenePaths;
-            public bool foldoutState;
+            public string _assetPath;
+            public string[] _scenePaths;
+            public bool _foldoutState;
         }
-        List<ScenesUsingAssetGUI> scenesUsingAssetGUIs = new List<ScenesUsingAssetGUI>();
+        List<ScenesUsingAssetGUI> _scenesUsingAssetGUIs = new List<ScenesUsingAssetGUI>();
 
         void OnScenesUsingAssetsGUI()
         {
@@ -863,26 +918,28 @@ namespace Unity.BuildReportInspector
             }
 
             // re-create list of scenes using assets
-            if(!scenesUsingAssetGUIs.Any())
+            if(!_scenesUsingAssetGUIs.Any())
             {
                 foreach (var scenesUsingAsset in report.scenesUsingAssets[0].list)
-                    scenesUsingAssetGUIs.Add(new ScenesUsingAssetGUI { assetPath = scenesUsingAsset.assetPath, scenePaths = scenesUsingAsset.scenePaths, foldoutState = true});
+                {
+                    _scenesUsingAssetGUIs.Add(new ScenesUsingAssetGUI { _assetPath = scenesUsingAsset.assetPath, _scenePaths = scenesUsingAsset.scenePaths, _foldoutState = true});
+                }
             }
 
             bool odd = true;
-            foreach (var scenesUsingAssetGUI in scenesUsingAssetGUIs)
+            foreach (var scenesUsingAssetGUI in _scenesUsingAssetGUIs)
             {
                 odd = !odd;
                 GUILayout.BeginVertical(odd ? OddStyle : EvenStyle);
 
                 GUILayout.BeginHorizontal(odd ? OddStyle : EvenStyle);
                 GUILayout.Space(10);
-                scenesUsingAssetGUI.foldoutState = EditorGUILayout.Foldout(scenesUsingAssetGUI.foldoutState, scenesUsingAssetGUI.assetPath);
+                scenesUsingAssetGUI._foldoutState = EditorGUILayout.Foldout(scenesUsingAssetGUI._foldoutState, scenesUsingAssetGUI._assetPath);
                 GUILayout.EndHorizontal();
 
-                if(scenesUsingAssetGUI.foldoutState)
+                if(scenesUsingAssetGUI._foldoutState)
                 {
-                    foreach (var scenePath in scenesUsingAssetGUI.scenePaths)
+                    foreach (var scenePath in scenesUsingAssetGUI._scenePaths)
                     {
                         odd = !odd;
                         GUILayout.BeginHorizontal(odd ? OddStyle : EvenStyle);
